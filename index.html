@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Image Gallery</title>
+  <style>
+    body,
+    html {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      height: 100%;
+      overflow-y: auto;
+    }
+
+    #customText {
+      width: 100%;
+      max-width: 150px;
+      resize: none;
+      padding: 10px;
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+
+    table {
+      width: 100%;
+      height: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+    }
+
+    td {
+      width: calc(100% / 6);
+      height: calc(100% / 3);
+      border: 1px solid black;
+      text-align: center;
+      vertical-align: middle;
+      position: relative;
+    }
+
+    td div div {
+      left: 1px;
+      top: 1px;
+      padding: 1px;
+      text-align: left;
+      display: list-item;
+      list-style-type: none;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 100%;
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      margin: auto;
+      transition: transform 0.3s ease-in-out;
+    }
+
+    img.enlarged {
+      position: fixed;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: auto;
+      height: 100%;
+      text-align: center;
+      display: block;
+      z-index: 666;
+      border: 2px dashed black;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 16px;
+    }
+
+    #jsonFile {
+      display: none;
+    }
+
+    p {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    #contextMenu {
+      display: none;
+      position: absolute;
+      background-color: white;
+      border: 1px solid black;
+      padding: 5px;
+      z-index: 1;
+    }
+
+    #contextMenu ul {
+      list-style-type: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    #contextMenu li {
+      cursor: pointer;
+      padding: 5px;
+    }
+
+    #contextMenu li:hover {
+      background-color: #f1f1f1;
+    }
+  </style>
+</head>
+
+<body>
+  <div style="width: 10%; float:left">
+    <textarea id="customText" placeholder="Enter custom text"></textarea>
+    <button id="loadButton">Load Images</button>
+    <button id="saveButton">Export json</button>
+    <button id="uploadButton">Import json</button>
+    <button id="clearButton">Clear All</button>
+    <input type="file" id="jsonFile">
+  </div>
+  <div class="container" style="width: 90%; float:right">
+    <table id="imageTable">
+      <tr>
+        <td id="cell0_0" data-row="0" data-col="0"></td>
+        <td id="cell0_1" data-row="0" data-col="1"></td>
+        <td id="cell0_2" data-row="0" data-col="2"></td>
+        <td id="cell0_3" data-row="0" data-col="3"></td>
+        <td id="cell0_4" data-row="0" data-col="4"></td>
+        <td id="cell0_5" data-row="0" data-col="5"></td>
+      </tr>
+      <tr>
+        <td id="cell1_0" data-row="1" data-col="0"></td>
+        <td id="cell1_1" data-row="1" data-col="1"></td>
+        <td id="cell1_2" data-row="1" data-col="2"></td>
+        <td id="cell1_3" data-row="1" data-col="3"></td>
+        <td id="cell1_4" data-row="1" data-col="4"></td>
+        <td id="cell1_5" data-row="1" data-col="5"></td>
+      </tr>
+      <tr>
+        <td id="cell2_0" data-row="2" data-col="0"></td>
+        <td id="cell2_1" data-row="2" data-col="1"></td>
+        <td id="cell2_2" data-row="2" data-col="2"></td>
+        <td id="cell2_3" data-row="2" data-col="3"> </td>
+        <td id="cell2_4" data-row="2" data-col="4"></td>
+        <td id="cell2_5" data-row="2" data-col="5"> </td>
+      </tr>
+    </table>
+  </div>
+  <div id="contextMenu">
+    <ul>
+      <li id="addTextOption">Add Text</li>
+      <li id="deleteOption">Delete</li>
+      <li id="cancelOption">Cancel</li>
+    </ul>
+  </div>
+
+  <script>
+    var loadButton = document.getElementById('loadButton');
+    loadButton.addEventListener('click', loadImages);
+
+    var uploadButton = document.getElementById('uploadButton');
+    uploadButton.addEventListener('click', triggerSelectJson);
+
+    var saveButton = document.getElementById('saveButton');
+    saveButton.addEventListener('click', saveExportJson);
+
+    var clearButton = document.getElementById('clearButton');
+    clearButton.addEventListener('click', clearTextAndTable);
+
+    var jsonFile = document.getElementById('jsonFile');
+    jsonFile.addEventListener('change', loadImportJson);
+
+    const contextMenu = document.getElementById('contextMenu');
+
+    // used for swap images or drag a single big image
+    var draggedImage = null;
+    var isToggleON = false;
+
+    function loadImages() {
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.multiple = true;
+
+      input.addEventListener('change', handleImageSelect);
+
+      input.click();
+    }
+
+    function handleImageSelect(event) {
+      var files = Array.from(event.target.files);
+      var table = document.getElementById('imageTable');
+
+      if (files.length > table.rows.length * table.rows[0].cells.length) {
+        alert('Not enough cells to display all images.');
+        return;
+      }
+
+      var cells = table.getElementsByTagName('td');
+      var loadedImages = 0;
+
+      for (var i = 0; i < cells.length; i++) {
+        var cell = cells[i];
+        var row = cell.getAttribute('data-row');
+        var col = cell.getAttribute('data-col');
+
+        console.log("inicio i " + i + " row " + row + " col " + col);
+
+        if (loadedImages < files.length) {
+
+          if (isCellEmpty(cell)) {
+            clearCell(cell);
+            console.log("clearCell");
+          } else {
+            console.log("continue");
+            continue;
+          }
+
+          var file = files[loadedImages];
+          var reader = new FileReader();
+
+          reader.onload = createImageLoadHandler(file, cell, row, col);
+
+          reader.readAsDataURL(file);
+          loadedImages++;
+
+          cell.appendChild(getDiv(`(${row}, ${col})`));
+
+        } else {
+          console.log("break");
+          break;
+        }
+      }
+    }
+
+    function isCellEmpty(cell) {
+      return cell.innerHTML.includes('empty.png') || cell.innerHTML == '';
+    }
+
+    function clearCell(cell) {
+      cell.innerHTML = '';
+    }
+
+    function createImageLoadHandler(file, cell, row, col) {
+      return function (event) {
+
+        const img = getImageEmptyAndClearCell(cell)
+        img.src = event.target.result;
+        img.alt = file.name;
+
+        img.addEventListener('click', toggleImageSize);
+        img.addEventListener('contextmenu', showRightClickMenu);
+
+        addTextsAndImgOnCell(cell, img, row, col, "");
+
+        // Save image information to JSON
+        var imageInfo = {
+          src: file.name,
+          alt: file.name,
+          row: parseInt(row),
+          col: parseInt(col)
+        };
+
+        saveImageInfo(imageInfo);
+      };
+    }
+
+    function dragStart(event) {
+      draggedImage = event.target;
+    }
+
+    function dragOver(event) {
+      event.preventDefault();
+    }
+
+    function dragEnter(event) {
+      event.preventDefault();
+      event.target.style.border = '2px dashed black';
+    }
+
+    function dragLeave(event) {
+      event.target.style.border = '0px';
+    }
+
+    function drop(event) {
+      event.preventDefault();
+      event.target.style.border = '0px';
+
+      if (draggedImage == null || draggedImage.parentNode == null) {
+        return;
+      }
+
+      // Swap images
+      var sourceCell = draggedImage.parentNode;
+      var targetCell = event.target.parentNode;
+
+      if (targetCell.getElementsByTagName('img').length == 0 || sourceCell.getElementsByTagName('img').length == 0) {
+        return;
+      }
+
+      if (isCellEmpty(targetCell) && isCellEmpty(sourceCell)) {
+        return;
+      }
+
+      if (sourceCell !== targetCell && sourceCell.tagName === 'TD' && targetCell.tagName === 'TD') {
+        var sourceImage = draggedImage;
+        var targetImage = event.target;
+
+        var sourceDiv = document.getElementById("div_" + sourceCell.id);
+        var targetDiv = document.getElementById("div_" + targetCell.id);
+
+        var valueSource = sourceCell.getElementsByTagName("input")[0].value;
+        var valueTarget = targetCell.getElementsByTagName("input")[0].value;
+
+        sourceCell.removeChild(sourceDiv);
+        targetCell.removeChild(targetDiv);
+
+        // Update image information in JSON
+        var sourceRow = parseInt(sourceCell.getAttribute('data-row'));
+        var sourceCol = parseInt(sourceCell.getAttribute('data-col'));
+        var targetRow = parseInt(targetCell.getAttribute('data-row'));
+        var targetCol = parseInt(targetCell.getAttribute('data-col'));
+
+        addTextsAndImgOnCell(targetCell, sourceImage, targetRow, targetCol, valueSource);
+        addTextsAndImgOnCell(sourceCell, targetImage, sourceRow, sourceCol, valueTarget);
+
+      }
+    }
+
+    function triggerSelectJson() {
+      jsonFile.click();
+    }
+
+    function loadImportJson(event) {
+      const file = event.target.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function () {
+        const data = JSON.parse(reader.result);
+        customText.value = data.text;
+        loadImagesFromJson(data.images);
+      };
+
+      reader.readAsText(file);
+    }
+
+    function loadImagesFromJson(images) {
+      for (let i = 0; i < images.length; i++) {
+        const image = images[i];
+        const { src, alt, row, col, input } = image;
+
+        const cell = document.getElementById(`cell${row}_${col}`);
+        if (cell) {
+          clearCell(cell);
+
+          const img = getImageEmptyAndClearCell(cell)
+          img.src = src;
+          img.alt = alt;
+          img.addEventListener('click', toggleImageSize);
+          img.addEventListener('contextmenu', showRightClickMenu);
+
+          addTextsAndImgOnCell(cell, img, row, col, input);
+        }
+      }
+    }
+
+    function resizeImage(img, cell) {
+      const maxWidth = cell.offsetWidth;
+      const maxHeight = cell.offsetHeight;
+      const ratio = Math.min(maxWidth / img.width, maxHeight / img.height);
+      img.width *= ratio;
+      img.height *= ratio;
+    }
+
+    function saveExportJson() {
+      const images = [];
+      const cells = document.getElementsByTagName('td');
+
+      for (let i = 0; i < cells.length; i++) {
+        const cell = cells[i];
+        const image = cell.getElementsByTagName('img')[0];
+        const input = cell.getElementsByTagName('input')[0];
+
+        if (image) {
+          const row = parseInt(cell.getAttribute('data-row'));
+          const col = parseInt(cell.getAttribute('data-col'));
+
+          const imageInfo = {
+            src: image.src,
+            alt: image.alt,
+            row,
+            col,
+            input: input.value
+          };
+
+          images.push(imageInfo);
+        }
+      }
+
+      const data = {
+        text: customText.value,
+        images
+      };
+
+      var filename = "empty.json"
+
+      if (customText.value != '') {
+        filename = customText.value.replace(/[^a-z0-9]/gi, '_').toLowerCase() + ".json";
+      }
+
+      const jsonData = JSON.stringify(data, null, 2);
+
+      const element = document.createElement('a');
+      element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(jsonData));
+      element.setAttribute('download', filename);
+      element.style.display = 'none';
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
+    }
+
+    function clearTextAndTable() {
+      customText.value = '';
+      draggedImage = null;
+      var table = document.getElementById('imageTable');
+      var cells = table.getElementsByTagName('td');
+
+      for (var i = 0; i < cells.length; i++) {
+        var cell = cells[i];
+        const row = parseInt(cell.getAttribute('data-row'));
+        const col = parseInt(cell.getAttribute('data-col'));
+
+        var img = getImageEmptyAndClearCell(cell);
+        addTextsAndImgOnCell(cell, img, row, col, "");
+      }
+    }
+
+    function addTextsAndImgOnCell(cell, img, row, col, inputText) {
+      var div = getDiv("");
+      div.style.opacity = "0.1";
+      div.id = "div_" + cell.id;
+
+      var divInput = getDiv("");
+      var input = getInputText(cell, inputText);
+      divInput.appendChild(input);
+
+      var divImgAlt = getDiv(img.alt);
+      var divCoordinates = getDiv(`(${row}, ${col})`);
+
+      div.appendChild(divInput);
+      div.appendChild(divImgAlt);
+      div.appendChild(divCoordinates);
+
+      cell.appendChild(div);
+      cell.appendChild(img);
+    }
+
+    function saveImageInfo(imageInfo) {
+      const cell = document.getElementById(`cell${imageInfo.row}_${imageInfo.col}`);
+      cell.setAttribute('data-row', imageInfo.row);
+      cell.setAttribute('data-col', imageInfo.col);
+      cell.id = `cell${imageInfo.row}_${imageInfo.col}`;
+    }
+
+    function showRightClickMenu(event) {
+      event.preventDefault();
+
+      if (isToggleON) {
+        return;
+      }
+
+      const img = event.target;
+      const cell = img.parentNode;
+      const row = cell.getAttribute('data-row');
+      const col = cell.getAttribute('data-col');
+
+      console.log("showRightClickMenu row " + row + " col " + col)
+
+      contextMenu.style.display = 'block';
+      contextMenu.style.top = event.clientY + 'px';
+      contextMenu.style.left = event.clientX + 'px';
+
+      const deleteOption = document.getElementById('deleteOption');
+      deleteOption.onclick = function () {
+        deleteImage(cell, row, col);
+      };
+
+      const addTextOption = document.getElementById('addTextOption');
+      addTextOption.onclick = function () {
+        img.click();
+      };
+
+    }
+
+    function deleteImage(cell, row, col) {
+
+      console.log("delete row " + row + " col " + col);
+      draggedImage = null;
+      clearCell(cell);
+      cell.appendChild(getDiv(`(${row}, ${col})`));
+
+      var img = getImageEmptyAndClearCell(cell);
+      addTextsAndImgOnCell(cell, img, row, col, "");
+    }
+
+    function getDiv(text) {
+      const fileNameText = document.createElement('div');
+      fileNameText.textContent = text;
+      return fileNameText;
+    }
+
+    function getInputText(cell, customText) {
+      const customTextElem = document.createElement('input');
+      var input = document.createElement("input");
+      input.type = "text";
+      input.name = "txt_" + cell.id;
+      input.value = customText;
+      return input;
+    }
+
+    function getImageEmptyAndClearCell(cell) {
+      clearCell(cell);
+      var img = document.createElement('img');
+      img.src = "empty.png";
+      img.alt = "Empty";
+      img.draggable = true;
+      img.addEventListener('dragstart', dragStart);
+      img.addEventListener('dragover', dragOver);
+      img.addEventListener('dragenter', dragEnter);
+      img.addEventListener('dragleave', dragLeave);
+      img.addEventListener('drop', drop);
+
+      img.onload = function () {
+        resizeImage(img, cell);
+      };
+      return img;
+    }
+
+    function handleMenuRightClick(event) {
+
+      if (isToggleON) {
+        return;
+      }
+
+      if (contextMenu.style.display === 'block') {
+        contextMenu.style.display = 'none';
+      }
+    }
+
+    function toggleImageSize(event) {
+      draggedImage = null;
+      isToggleON = true;
+      var img = event.target;
+      var cell = img.parentNode;
+      var div = document.getElementById("div_" + cell.id);
+
+      if (isCellEmpty(cell)) {
+        console.log("isCellEmpty");
+        return;
+      }
+
+      img.removeAttribute('style');
+
+      const cells = document.getElementsByTagName('td');
+      const table = document.getElementById('imageTable');
+      const images = document.getElementsByTagName('img');
+
+      if (img.classList.contains('enlarged')) {
+        isToggleON = false;
+        minimizeImage(table, cells, images, div, img, cell);
+      } else {
+        zoomImage(table, cells, images, div, img, cell);
+      }
+    }
+
+    function minimizeImage(table, cells, images, div, img, cell) {
+      addImageEvents(images);
+      setBackground(table, 'none');
+      setCellsOpacityBGC(cells, "1", "none");
+      setOpacity(div, "0.1");
+      removeClass(img, 'enlarged');
+      img.removeEventListener('dragstart', startDragImg);
+    }
+
+    function zoomImage(table, cells, images, div, img, cell) {
+      removeImageEvents(images);
+      setBackground(table, 'gray');
+      setCellsOpacityBGC(cells, "0.1", "gray");
+      setOpacity(div, "1");
+      setOpacity(cell, "1");
+      addClass(img, 'enlarged');
+      setBackground(cell, "white");
+      img.addEventListener('click', toggleImageSize);
+      img.addEventListener('dragstart', startDragImg);
+    }
+
+    function setBackground(element, color) {
+      element.style.background = color;
+    }
+
+    function setCellBackground(cell, color) {
+      cell.style.background = color;
+    }
+
+    function setOpacity(element, opacity) {
+      element.style.opacity = opacity;
+    }
+
+    function setCellsOpacityBGC(cells, opacity, backgroundColor) {
+      for (let i = 0; i < cells.length; i++) {
+        setOpacity(cells[i], opacity);
+        cells[i].style.background = backgroundColor;
+      }
+    }
+
+    function removeImageEvents(images) {
+      for (let i = 0; i < images.length; i++) {
+        images[i].removeEventListener('click', toggleImageSize);
+        images[i].removeEventListener('dragstart', dragStart);
+        images[i].removeEventListener('dragover', dragOver);
+        images[i].removeEventListener('dragenter', dragEnter);
+        images[i].removeEventListener('dragleave', dragLeave);
+        images[i].removeEventListener('drop', drop);
+      }
+    }
+
+    function addImageEvents(images) {
+      for (let i = 0; i < images.length; i++) {
+        images[i].addEventListener('click', toggleImageSize);
+        images[i].addEventListener('dragstart', dragStart);
+        images[i].addEventListener('dragover', dragOver);
+        images[i].addEventListener('dragenter', dragEnter);
+        images[i].addEventListener('dragleave', dragLeave);
+        images[i].addEventListener('drop', drop);
+      }
+    }
+
+    function addClass(element, clazz) {
+      element.classList.add(clazz);
+    }
+
+    function removeClass(element, clazz) {
+      element.classList.remove(clazz);
+    }
+
+    function startDragImg(event) {
+      event.preventDefault();
+      draggedImage = event.target;
+      document.addEventListener('mousemove', mousemoveImg);
+    }
+
+    function mousemoveImg(event) {
+      event.preventDefault();
+      document.addEventListener('mouseup', dragHorizontal);
+      document.removeEventListener('mousemove', mousemoveImg);
+    }
+
+    function dragHorizontal(event) {
+      var offsetX = event.clientX;
+      var img = draggedImage;
+
+      const screenWidth = window.innerWidth;
+      const midImageWidth = img.offsetWidth / 2;
+      const maxOffset = (screenWidth - midImageWidth) / 2;
+
+      offsetX = offsetX - maxOffset;
+
+      // Limit the image movement within the screen
+      if (offsetX < (midImageWidth - screenWidth)) {
+        offsetX = (midImageWidth - screenWidth); // Prevent moving left of the screen
+      } else if (offsetX > (screenWidth - midImageWidth)) {
+        offsetX = (screenWidth - midImageWidth); // Prevent moving right of the screen
+      }
+
+      // Update the image position
+      img.style.left = `${offsetX}px`;
+      document.removeEventListener('mouseup', dragHorizontal);
+    }
+
+    document.addEventListener('click', handleMenuRightClick);
+
+    clearTextAndTable();
+  </script>
+
+</body>
+
+</html>
